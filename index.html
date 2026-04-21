@@ -1,1 +1,214 @@
-<!DOCTYPE html><html><head><title>Mineblock</title><style>body{margin:0;overflow:hidden}</style></head><body><canvas id="game"></canvas><script type="module">import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.158/build/three.module.js";import { PointerLockControls } from "https://cdn.jsdelivr.net/npm/three@0.158/examples/jsm/controls/PointerLockControls.js";const scene=new THREE.Scene();scene.background=new THREE.Color(0x87CEEB);const camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,1000);const renderer=new THREE.WebGLRenderer({canvas:document.getElementById("game")});renderer.setSize(window.innerWidth,window.innerHeight);const light=new THREE.DirectionalLight(0xffffff,1);light.position.set(50,100,50);scene.add(light);const ambient=new THREE.AmbientLight(0xffffff,0.3);scene.add(ambient);function createBlock(x,z){const geometry=new THREE.BoxGeometry(1,1,1);const materials=[new THREE.MeshStandardMaterial({color:0x8B4513}),new THREE.MeshStandardMaterial({color:0x8B4513}),new THREE.MeshStandardMaterial({color:0x4CAF50}),new THREE.MeshStandardMaterial({color:0x8B4513}),new THREE.MeshStandardMaterial({color:0x8B4513}),new THREE.MeshStandardMaterial({color:0x8B4513})];const block=new THREE.Mesh(geometry,materials);block.position.set(x,0,z);return block}function createWorld(){const size=64;for(let x=0;x<size;x++){for(let z=0;z<size;z++){scene.add(createBlock(x,z))}}}createWorld();const controls=new PointerLockControls(camera,document.body);document.addEventListener("click",()=>controls.lock());scene.add(controls.getObject());camera.position.set(32,2,80);const keys={};document.addEventListener("keydown",e=>keys[e.code]=true);document.addEventListener("keyup",e=>keys[e.code]=false);function move(){const speed=0.1;if(keys["KeyW"])controls.moveForward(speed);if(keys["KeyS"])controls.moveForward(-speed);if(keys["KeyA"])controls.moveRight(-speed);if(keys["KeyD"])controls.moveRight(speed)}function animate(){requestAnimationFrame(animate);move();renderer.render(scene,camera)}animate();window.addEventListener("resize",()=>{camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight)})</script></body></html>
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mineblock</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: black; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.158/build/three.module.js";
+import { PointerLockControls } from "https://cdn.jsdelivr.net/npm/three@0.158/examples/jsm/controls/PointerLockControls.js";
+
+//////////////////////////////
+// CONFIG SYSTEM (SCALABLE)
+//////////////////////////////
+const CONFIG = {
+  WORLD_SIZE: 64,
+  BLOCK_SIZE: 1,
+  PLAYER_HEIGHT: 2,
+  MOVE_SPEED: 5,
+  GRAVITY: 9.8,
+  FRICTION: 8,
+};
+
+//////////////////////////////
+// SCENE SETUP
+//////////////////////////////
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB);
+scene.fog = new THREE.Fog(0x87CEEB, 20, 120);
+
+//////////////////////////////
+// CAMERA
+//////////////////////////////
+const camera = new THREE.PerspectiveCamera(
+  75,
+  window.innerWidth/window.innerHeight,
+  0.1,
+  1000
+);
+
+//////////////////////////////
+// RENDERER
+//////////////////////////////
+const renderer = new THREE.WebGLRenderer({
+  canvas: document.getElementById("game"),
+  antialias: true
+});
+
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+
+//////////////////////////////
+// LIGHTING SYSTEM
+//////////////////////////////
+const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+sun.position.set(50, 100, 50);
+sun.castShadow = true;
+sun.shadow.mapSize.width = 2048;
+sun.shadow.mapSize.height = 2048;
+scene.add(sun);
+
+const ambient = new THREE.AmbientLight(0xffffff, 0.3);
+scene.add(ambient);
+
+//////////////////////////////
+// BLOCK SYSTEM
+//////////////////////////////
+const BLOCK_TYPES = {
+  GRASS: {
+    top: 0x4CAF50,
+    side: 0x8B4513
+  }
+};
+
+function createBlock(type, x, y, z) {
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+
+  const mat = [
+    new THREE.MeshStandardMaterial({ color: type.side }),
+    new THREE.MeshStandardMaterial({ color: type.side }),
+    new THREE.MeshStandardMaterial({ color: type.top }),
+    new THREE.MeshStandardMaterial({ color: type.side }),
+    new THREE.MeshStandardMaterial({ color: type.side }),
+    new THREE.MeshStandardMaterial({ color: type.side })
+  ];
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y, z);
+  mesh.receiveShadow = true;
+  mesh.castShadow = true;
+
+  return mesh;
+}
+
+//////////////////////////////
+// WORLD GENERATION SYSTEM
+//////////////////////////////
+const world = new THREE.Group();
+
+function generateFlatWorld() {
+  const size = CONFIG.WORLD_SIZE;
+
+  for (let x = 0; x < size; x++) {
+    for (let z = 0; z < size; z++) {
+      const block = createBlock(BLOCK_TYPES.GRASS, x, 0, z);
+      world.add(block);
+    }
+  }
+}
+
+generateFlatWorld();
+scene.add(world);
+
+//////////////////////////////
+// PLAYER SYSTEM
+//////////////////////////////
+const controls = new PointerLockControls(camera, document.body);
+scene.add(controls.getObject());
+
+camera.position.set(CONFIG.WORLD_SIZE/2, CONFIG.PLAYER_HEIGHT, CONFIG.WORLD_SIZE/2);
+
+document.addEventListener("click", () => controls.lock());
+
+//////////////////////////////
+// INPUT SYSTEM
+//////////////////////////////
+const keys = {};
+
+document.addEventListener("keydown", (e) => keys[e.code] = true);
+document.addEventListener("keyup", (e) => keys[e.code] = false);
+
+//////////////////////////////
+// PLAYER PHYSICS (BASIC)
+//////////////////////////////
+const velocity = new THREE.Vector3();
+let canJump = false;
+
+function updateMovement(delta) {
+  const speed = CONFIG.MOVE_SPEED;
+
+  velocity.x -= velocity.x * CONFIG.FRICTION * delta;
+  velocity.z -= velocity.z * CONFIG.FRICTION * delta;
+
+  velocity.y -= CONFIG.GRAVITY * delta;
+
+  const direction = new THREE.Vector3();
+
+  direction.z = Number(keys["KeyW"]) - Number(keys["KeyS"]);
+  direction.x = Number(keys["KeyD"]) - Number(keys["KeyA"]);
+  direction.normalize();
+
+  if (keys["KeyW"] || keys["KeyS"]) velocity.z -= direction.z * speed * delta;
+  if (keys["KeyA"] || keys["KeyD"]) velocity.x -= direction.x * speed * delta;
+
+  controls.moveRight(-velocity.x * delta);
+  controls.moveForward(-velocity.z * delta);
+
+  camera.position.y += velocity.y * delta;
+
+  // Ground collision (simple flat world)
+  if (camera.position.y < CONFIG.PLAYER_HEIGHT) {
+    velocity.y = 0;
+    camera.position.y = CONFIG.PLAYER_HEIGHT;
+    canJump = true;
+  }
+}
+
+//////////////////////////////
+// JUMP SYSTEM
+//////////////////////////////
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space" && canJump) {
+    velocity.y = 5;
+    canJump = false;
+  }
+});
+
+//////////////////////////////
+// GAME LOOP WITH DELTA TIME
+//////////////////////////////
+let prevTime = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const time = performance.now();
+  const delta = (time - prevTime) / 1000;
+
+  updateMovement(delta);
+
+  renderer.render(scene, camera);
+
+  prevTime = time;
+}
+
+animate();
+
+//////////////////////////////
+// RESIZE SYSTEM
+//////////////////////////////
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+</script>
+</body>
+</html>
